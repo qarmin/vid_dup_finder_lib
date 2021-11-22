@@ -39,7 +39,9 @@ impl VideoHash {
         Self::from_path_inner(src_path).map(|(hash, _stats)| hash)
     }
 
-    fn from_path_inner(src_path: impl AsRef<Path>) -> Result<(Self, VideoStats), HashCreationErrorKind> {
+    fn from_path_inner(
+        src_path: impl AsRef<Path>,
+    ) -> Result<(Self, VideoStats), HashCreationErrorKind> {
         //Check that ffmpeg thinks there is a video at this path.
         if let Err(e) = ffmpeg_cmdline_utils::is_video_file(src_path.as_ref()) {
             return Err(HashCreationErrorKind::DetermineVideo {
@@ -54,7 +56,9 @@ impl VideoHash {
 
         // If we didn't decode num_frames frames, a hash cannot be constructed from the decoded video.
         if frames.len() != HASH_NUM_IMAGES {
-            return Err(HashCreationErrorKind::VideoLength(src_path.as_ref().to_path_buf()));
+            return Err(HashCreationErrorKind::VideoLength(
+                src_path.as_ref().to_path_buf(),
+            ));
         }
 
         //remove letterboxing
@@ -62,7 +66,10 @@ impl VideoHash {
         let mut frames = frames.without_letterbox();
 
         //resize to remove high frequency details
-        frames = frames.resize(crate::definitions::RESIZE_IMAGE_X, crate::definitions::RESIZE_IMAGE_Y);
+        frames = frames.resize(
+            crate::definitions::RESIZE_IMAGE_X,
+            crate::definitions::RESIZE_IMAGE_Y,
+        );
 
         let spatial_hash_seq = TimeDomainSeq::from_framified_video(&frames);
         let spatial_hash_bits = spatial_hash_seq.eliminate_high_frequencies().hash();
@@ -75,8 +82,13 @@ impl VideoHash {
             .take(HASH_NUM_IMAGES - 1)
             .collect();
 
-        let hash =
-            VideoHash::from_components(src_path, spatial_hash_bits, temporal_hash_bits, stats.duration as u32).unwrap();
+        let hash = VideoHash::from_components(
+            src_path,
+            spatial_hash_bits,
+            temporal_hash_bits,
+            stats.duration as u32,
+        )
+        .unwrap();
         let stats = VideoStats::new(stats, frames.png_size());
         Ok((hash, stats))
     }
@@ -120,9 +132,18 @@ impl VideoHash {
         Ok(ret)
     }
 
+    pub fn num_frames(&self) -> u32 {
+        self.num_frames
+    }
+
     /// The path to the video file from which this hash was created.
     pub fn src_path(&self) -> &Path {
         &self.src_path
+    }
+
+    /// The hash.
+    pub fn hash(&self) -> &[u64; HASH_QWORDS] {
+        &self.hash
     }
 
     /// The duration of the video from which this hash was created.
@@ -143,7 +164,8 @@ impl VideoHash {
 
         let different_spatial_frames = max_frames - shared_frames;
         let different_temporal_frames = different_spatial_frames;
-        let length_mismatch_qwords = (different_spatial_frames + different_temporal_frames) * HASH_FRAME_QWORDS as u32;
+        let length_mismatch_qwords =
+            (different_spatial_frames + different_temporal_frames) * HASH_FRAME_QWORDS as u32;
 
         let length_mismatch_dist = length_mismatch_qwords * 64;
 
@@ -184,7 +206,9 @@ impl AsRef<VideoHash> for VideoHash {
 #[cfg(feature = "app_only_fns")]
 #[doc(hidden)]
 impl VideoHash {
-    pub fn from_path_with_stats(src_path: impl AsRef<Path>) -> Result<(Self, VideoStats), HashCreationErrorKind> {
+    pub fn from_path_with_stats(
+        src_path: impl AsRef<Path>,
+    ) -> Result<(Self, VideoStats), HashCreationErrorKind> {
         Self::from_path_inner(src_path)
     }
 
@@ -262,10 +286,25 @@ pub mod test_util {
     use rand::prelude::*;
 
     use super::VideoHash;
+    use crate::video_hashing::video_hash::HASH_QWORDS;
     use crate::{definitions::HASH_NUM_IMAGES, video_hashing::video_hash::SPATIAL_HASH_QWORDS};
 
     #[doc(hidden)]
     impl VideoHash {
+        pub fn with_start_data(
+            duration: u32,
+            src_path: impl AsRef<Path>,
+            hash: [u64; HASH_QWORDS],
+            num_frames: u32,
+        ) -> Self {
+            VideoHash {
+                hash,
+                num_frames,
+                src_path: src_path.as_ref().to_path_buf(),
+                duration,
+            }
+        }
+
         pub fn with_duration(&self, duration: u32) -> Self {
             let mut ret = self.clone();
             ret.duration = duration;
@@ -299,7 +338,11 @@ pub mod test_util {
         }
 
         //generate a set of temporal hashes, each with a given distance from the empty hash.
-        pub fn hash_with_spatial_distance(&self, target_distance: u32, rng: &mut StdRng) -> VideoHash {
+        pub fn hash_with_spatial_distance(
+            &self,
+            target_distance: u32,
+            rng: &mut StdRng,
+        ) -> VideoHash {
             //for now, we will only support hashes where every frame is present.
             assert!(self.num_frames as usize == SPATIAL_HASH_QWORDS);
 
@@ -348,7 +391,12 @@ pub mod test_util {
             }
 
             let thash_qwords = HASH_FRAME_QWORDS * (num_frames - 1);
-            for val in ret.hash.iter_mut().skip(shash_qwords).take(thash_qwords as usize - 1) {
+            for val in ret
+                .hash
+                .iter_mut()
+                .skip(shash_qwords)
+                .take(thash_qwords as usize - 1)
+            {
                 *val = rng.gen();
             }
 
@@ -438,7 +486,10 @@ mod test {
             let expected_temporal_diff = differing_frames * 64;
 
             let actual_distance = empty_hash_1.levenshtein_distance(&empty_hash_2);
-            assert_eq!(actual_distance.distance, expected_spatial_diff + expected_temporal_diff);
+            assert_eq!(
+                actual_distance.distance,
+                expected_spatial_diff + expected_temporal_diff
+            );
         }
     }
 
